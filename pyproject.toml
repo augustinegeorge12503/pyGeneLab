@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyGeneLab"
+version = "0.1.0"
+description = "A small Python library for gene analysis, pathway scoring, and AnnData utilities."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "Augustine George" }
+]
+dependencies = [
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "seaborn",
+    "scanpy",
+    "anndata",
+    "decoupler",
+    "scikit-learn",
+    "torch"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
