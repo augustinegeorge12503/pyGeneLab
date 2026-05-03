@@ -19,8 +19,7 @@ dependencies = [
     "scanpy",
     "anndata",
     "decoupler",
-    "scikit-learn",
-    "torch"
+    "scikit-learn"
 ]
 
 [project.optional-dependencies]
