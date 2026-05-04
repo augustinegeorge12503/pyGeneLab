@@ -1,0 +1,1 @@
+-e git+ssh://git@github.com/augustinegeorge12503/pyGeneLab.git@main#egg=pyGeneLab
