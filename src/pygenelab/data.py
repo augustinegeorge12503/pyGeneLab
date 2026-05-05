@@ -258,8 +258,8 @@ def get_pathway_genes(
     return genes
 
 
-# prepare_plot_df
-def prepare_plot_df(
+# prepare_group_score_df
+def prepare_group_score_df(
     adata,
     group_col,
     value_col,
@@ -315,7 +315,7 @@ def summarize_score_by_group(
     # summarize_score_by_group
     # api:
     # summarize_score_by_group(
-    #     data=plot_df,
+    #     data=group_score_df,
     #     group_col="age",
     #     score_col="SAUL_SEN_MAYO_UP_IN_SEN",
     #     stats_to_include=None,
