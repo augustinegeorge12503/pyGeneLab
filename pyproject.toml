@@ -7,7 +7,7 @@ name = "pyGeneLab"
 version = "0.1.0"
 description = "A small Python library for gene analysis, pathway scoring, and AnnData utilities."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 authors = [
     { name = "Augustine George" }
 ]
@@ -18,7 +18,7 @@ dependencies = [
     "seaborn",
     "scanpy",
     "anndata",
-    "decoupler",
+    "decoupler>=2.0.0",
     "scikit-learn"
 ]
 
