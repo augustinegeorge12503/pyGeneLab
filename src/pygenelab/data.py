@@ -211,7 +211,7 @@ def get_pathway_genes(
     dropna=True
 ):
     """
-    get genes from one pathway in a geneset dataframe
+    get genes from one pathway as a list
     """
 
     # get_pathway_genes
