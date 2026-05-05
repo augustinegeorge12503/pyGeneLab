@@ -13,18 +13,37 @@ from scipy import stats
 
 
 # convert_gmt_to_decoupler_format
-def convert_gmt_to_decoupler_format(pth: Path) -> pd.DataFrame:
+def convert_gmt_to_decoupler_format(
+    pth: Path,
+    include_pathways=None
+) -> pd.DataFrame:
     """
     convert .gmt file paths to decoupler input format
     """
-    
-    # dictionary to store all the pathways
+
+    # convert_gmt_to_decoupler_format
+    # api:
+    # convert_gmt_to_decoupler_format(
+    #     pth=gmt_path,
+    #     include_pathways=["PATHWAY_1", "PATHWAY_2"],
+    # )
+
+    # make pathway filter set
+    if include_pathways is not None:
+        include_pathways = set(include_pathways)
+
+    # dictionary to store selected pathways
     pathways = {}
 
     # open .gmt path and get pathway: genes
     with Path(pth).open("r") as f:
         for line in f:
             name, _, *genes = line.strip().split("\t")
+
+            # skip pathways not in selected list
+            if include_pathways is not None and name not in include_pathways:
+                continue
+
             pathways[name] = genes
 
     # decoupler accepts "source" for pathway and "target" for genes
