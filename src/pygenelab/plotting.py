@@ -639,3 +639,185 @@ def plot_multiple_gene_expression(
 
     # return dataframe, figure, and axes
     return plot_df, fig, axes
+
+
+# plot_intersecting_deg_dotplot
+def plot_intersecting_deg_dotplot(
+    merged_deg_df,
+    group_names,
+    gene_col="names",
+    value_cols=None,
+    value_col_prefix="logfoldchanges",
+    figsize=(12, 4),
+    cmap="Reds",
+    title=None,
+    min_dot_size=40,
+    max_dot_size=500,
+    rotation=90,
+    size_by_abs=True
+):
+    """
+    plot a dotplot for shared deg genes across groups
+
+    dot color shows the value in each group
+    dot size shows the magnitude of the value
+    """
+
+    # plot_intersecting_deg_dotplot
+    # api:
+    # plot_intersecting_deg_dotplot(
+    #     merged_deg_df=male_top10_genes,
+    #     group_names=["Fast IIX", "Fast IIB", "Skeleton MuSc", "FAPs"],
+    #     gene_col="names",
+    # )
+
+    # make default value columns
+    if value_cols is None:
+        value_cols = [
+            f"{value_col_prefix}_df{i+1}"
+            for i in range(len(group_names))
+        ]
+
+    # check input lengths match
+    if len(group_names) != len(value_cols):
+        raise ValueError("group_names and value_cols must have the same length")
+
+    # check needed columns
+    needed_cols = [gene_col] + value_cols
+    missing_cols = [col for col in needed_cols if col not in merged_deg_df.columns]
+
+    if len(missing_cols) > 0:
+        raise ValueError(f"missing columns in merged_deg_df: {missing_cols}")
+
+    # keep needed columns
+    plot_df = merged_deg_df[needed_cols].copy()
+
+    # rename value columns to group names
+    rename_map = {
+        old_col: new_name
+        for old_col, new_name in zip(value_cols, group_names)
+    }
+    plot_df = plot_df.rename(columns=rename_map)
+
+    # reshape to long format
+    plot_df = plot_df.melt(
+        id_vars=gene_col,
+        value_vars=group_names,
+        var_name="group",
+        value_name="value"
+    )
+
+    # set plot order
+    gene_order = merged_deg_df[gene_col].tolist()
+    plot_df[gene_col] = pd.Categorical(plot_df[gene_col], categories=gene_order, ordered=True)
+    plot_df["group"] = pd.Categorical(plot_df["group"], categories=group_names, ordered=True)
+
+    # sort rows
+    plot_df = plot_df.sort_values(["group", gene_col]).reset_index(drop=True)
+
+    # make x and y positions
+    x_map = {gene: i for i, gene in enumerate(gene_order)}
+    y_map = {group: i for i, group in enumerate(group_names)}
+
+    plot_df["x"] = plot_df[gene_col].map(x_map)
+    plot_df["y"] = plot_df["group"].map(y_map)
+
+    # get size values
+    if size_by_abs:
+        plot_df["size_value"] = plot_df["value"].abs()
+    else:
+        plot_df["size_value"] = plot_df["value"]
+
+    # scale dot sizes
+    size_min = plot_df["size_value"].min()
+    size_max = plot_df["size_value"].max()
+
+    if size_min == size_max:
+        plot_df["dot_size"] = (min_dot_size + max_dot_size) / 2
+    else:
+        plot_df["dot_size"] = (
+            min_dot_size
+            + (plot_df["size_value"] - size_min)
+            * (max_dot_size - min_dot_size)
+            / (size_max - size_min)
+        )
+
+    # make plot
+    fig, ax = plt.subplots(figsize=figsize)
+
+    scatter = ax.scatter(
+        plot_df["x"],
+        plot_df["y"],
+        s=plot_df["dot_size"],
+        c=plot_df["value"],
+        cmap=cmap,
+        edgecolors="dimgray",
+        linewidths=1
+    )
+
+    # axis labels and ticks
+    ax.set_xticks(range(len(gene_order)))
+    ax.set_xticklabels(gene_order, rotation=rotation)
+    ax.set_yticks(range(len(group_names)))
+    ax.set_yticklabels(group_names)
+
+    ax.set_xlabel("Genes")
+    ax.set_ylabel("Cell Types")
+
+    # title
+    if title is not None:
+        ax.set_title(title)
+
+    # light background
+    ax.set_facecolor("#f2f2f2")
+
+    # colorbar
+    cbar = plt.colorbar(scatter, ax=ax, pad=0.02)
+    cbar.set_label(value_col_prefix.replace("_", " ").title())
+
+    # size legend values
+    legend_vals = np.linspace(size_min, size_max, 4)
+
+    if size_min == size_max:
+        legend_vals = np.array([size_min])
+
+    legend_sizes = []
+    for val in legend_vals:
+        if size_min == size_max:
+            size = (min_dot_size + max_dot_size) / 2
+        else:
+            size = (
+                min_dot_size
+                + (val - size_min)
+                * (max_dot_size - min_dot_size)
+                / (size_max - size_min)
+            )
+        legend_sizes.append(size)
+
+    # make size legend handles
+    handles = [
+        ax.scatter([], [], s=size, facecolor="gray", edgecolor="dimgray")
+        for size in legend_sizes
+    ]
+
+    labels = [f"{val:.2f}" for val in legend_vals]
+
+    legend_title = value_col_prefix.replace("_", " ").title()
+    if size_by_abs:
+        legend_title = f"|{legend_title}|"
+
+    ax.legend(
+        handles,
+        labels,
+        title=legend_title,
+        bbox_to_anchor=(1.18, 1.0),
+        loc="upper left",
+        frameon=False,
+        scatterpoints=1,
+        handlelength=1
+    )
+
+    plt.tight_layout()
+
+    # return figure
+    return fig
