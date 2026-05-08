@@ -8,6 +8,8 @@ functions relating to modifying images
 import io
 import math
 from PIL import Image
+from pathlib import Path
+import matplotlib as mpl
 
 
 # combine_two_figures
@@ -141,3 +143,46 @@ def combine_multiple_figures(figures, layout="horizontal", n_cols=None, save_pat
 
     # return combined image
     return combined_img
+
+
+# save_editable_svg
+def save_editable_svg(
+    fig,
+    output_path,
+    bbox_inches="tight",
+    transparent=True,
+    dpi=300
+):
+    """
+    save a matplotlib figure as an editable svg file
+
+    text will remain editable in illustrator / inkscape when possible
+    """
+
+    # save_editable_svg
+    # api:
+    # save_editable_svg(
+    #     fig=fig,
+    #     output_path="figure.svg",
+    # )
+
+    # convert path to pathlib path
+    output_path = Path(output_path)
+
+    # make sure parent folder exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # keep text as editable text instead of paths
+    mpl.rcParams["svg.fonttype"] = "none"
+
+    # save figure as svg
+    fig.savefig(
+        output_path,
+        format="svg",
+        bbox_inches=bbox_inches,
+        transparent=transparent,
+        dpi=dpi
+    )
+
+    # return saved path
+    return output_path
