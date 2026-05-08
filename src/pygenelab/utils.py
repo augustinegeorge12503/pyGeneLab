@@ -15,7 +15,8 @@ from scipy import stats
 # convert_gmt_to_decoupler_format
 def convert_gmt_to_decoupler_format(
     pth: Path,
-    include_pathways=None
+    include_pathways=None,
+    gene_origin="mice"
 ) -> pd.DataFrame:
     """
     convert .gmt file paths to decoupler input format
@@ -26,7 +27,12 @@ def convert_gmt_to_decoupler_format(
     # convert_gmt_to_decoupler_format(
     #     pth=gmt_path,
     #     include_pathways=["PATHWAY_1", "PATHWAY_2"],
+    #     gene_origin="mice"
     # )
+
+    # check gene origin
+    if gene_origin not in ["mice", "human"]:
+        raise ValueError("gene_origin must be either 'mice' or 'human'")
 
     # make pathway filter set
     if include_pathways is not None:
@@ -43,6 +49,13 @@ def convert_gmt_to_decoupler_format(
             # skip pathways not in selected list
             if include_pathways is not None and name not in include_pathways:
                 continue
+
+            # format gene names
+            if gene_origin == "mice":
+                genes = [gene.capitalize() for gene in genes]
+
+            elif gene_origin == "human":
+                genes = [gene.upper() for gene in genes]
 
             pathways[name] = genes
 
