@@ -117,56 +117,93 @@ def calculate_pairwise_significance(data, groups, x_var, y_var):
     return results
 
 
-# get_top_intersecting_genes_from_degs
-def get_top_intersecting_genes_from_degs(
+# top_n_intersecting_genes_from_degs
+def top_n_intersecting_genes_from_degs(
     deg_dfs,
-    top_n=50,
-    gene_col="gene",
-    sort_col="pvals_adj",
-    ascending=True
+    n=10,
+    gene_col="names",
+    rank_by="logfoldchanges",
+    ascending=False,
+    df_names=None
 ):
     """
-    find genes that are shared across the top n genes from multiple deg dataframes
+    find top n shared genes across multiple deg dataframes
+
+    genes are ranked by the average value of rank_by across all dataframes
     """
 
-    # get_top_intersecting_genes_from_degs
+    # top_n_intersecting_genes_from_degs
     # api:
-    # get_top_intersecting_genes_from_degs(
+    # top_n_intersecting_genes_from_degs(
     #     deg_dfs=[deg_df1, deg_df2, deg_df3],
-    #     top_n=50,
-    #     gene_col="gene",
-    #     sort_col="pvals_adj",
-    #     ascending=True
+    #     n=10,
+    #     gene_col="names",
+    #     rank_by="logfoldchanges",
+    #     ascending=False,
     # )
 
-    # store top genes from each deg dataframe
-    top_gene_sets = []
+    # check input
+    if len(deg_dfs) < 2:
+        raise ValueError("deg_dfs must contain at least two dataframes")
 
-    # loop through each deg dataframe
-    for deg_df in deg_dfs:
+    # make default dataframe names
+    if df_names is None:
+        df_names = [f"df{i+1}" for i in range(len(deg_dfs))]
 
-        # check needed columns
-        if gene_col not in deg_df.columns:
-            raise ValueError(f"{gene_col} was not found in deg dataframe")
+    # check names match dataframe count
+    if len(df_names) != len(deg_dfs):
+        raise ValueError("df_names must have the same length as deg_dfs")
 
-        if sort_col not in deg_df.columns:
-            raise ValueError(f"{sort_col} was not found in deg dataframe")
+    # check needed columns
+    for df in deg_dfs:
+        if gene_col not in df.columns:
+            raise ValueError(f"{gene_col} was not found in one dataframe")
 
-        # sort deg dataframe and get top n genes
-        top_genes = (
-            deg_df
-            .sort_values(sort_col, ascending=ascending)
-            .head(top_n)[gene_col]
-            .dropna()
-            .astype(str)
-            .tolist()
-        )
+        if rank_by not in df.columns:
+            raise ValueError(f"{rank_by} was not found in one dataframe")
 
-        # add as set
-        top_gene_sets.append(set(top_genes))
+    # find genes shared by all dataframes
+    shared_genes = set(deg_dfs[0][gene_col])
 
-    # find intersecting genes
-    intersecting_genes = set.intersection(*top_gene_sets)
+    for df in deg_dfs[1:]:
+        shared_genes = shared_genes.intersection(set(df[gene_col]))
 
-    # return as sorted list
-    return sorted(intersecting_genes)
+    # create merged dataframe using shared genes
+    merged_df = None
+
+    for df, name in zip(deg_dfs, df_names):
+
+        # keep only shared genes and ranking column
+        temp_df = df[df[gene_col].isin(shared_genes)][[gene_col, rank_by]].copy()
+
+        # rename rank column
+        temp_df = temp_df.rename(columns={rank_by: f"{rank_by}_{name}"})
+
+        # merge dataframes
+        if merged_df is None:
+            merged_df = temp_df
+        else:
+            merged_df = pd.merge(
+                merged_df,
+                temp_df,
+                on=gene_col,
+                how="inner"
+            )
+
+    # get score columns
+    score_cols = [f"{rank_by}_{name}" for name in df_names]
+
+    # calculate mean rank score
+    merged_df["mean_rank_score"] = merged_df[score_cols].mean(axis=1)
+
+    # sort and return top n
+    merged_df = merged_df.sort_values(
+        "mean_rank_score",
+        ascending=ascending
+    )
+
+    # reset index
+    merged_df = merged_df.reset_index(drop=True)
+
+    # return top n genes
+    return merged_df.head(n)
