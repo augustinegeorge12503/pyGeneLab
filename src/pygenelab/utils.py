@@ -115,3 +115,58 @@ def calculate_pairwise_significance(data, groups, x_var, y_var):
 
     # return pairwise results
     return results
+
+
+# get_top_intersecting_genes_from_degs
+def get_top_intersecting_genes_from_degs(
+    deg_dfs,
+    top_n=50,
+    gene_col="gene",
+    sort_col="pvals_adj",
+    ascending=True
+):
+    """
+    find genes that are shared across the top n genes from multiple deg dataframes
+    """
+
+    # get_top_intersecting_genes_from_degs
+    # api:
+    # get_top_intersecting_genes_from_degs(
+    #     deg_dfs=[deg_df1, deg_df2, deg_df3],
+    #     top_n=50,
+    #     gene_col="gene",
+    #     sort_col="pvals_adj",
+    #     ascending=True
+    # )
+
+    # store top genes from each deg dataframe
+    top_gene_sets = []
+
+    # loop through each deg dataframe
+    for deg_df in deg_dfs:
+
+        # check needed columns
+        if gene_col not in deg_df.columns:
+            raise ValueError(f"{gene_col} was not found in deg dataframe")
+
+        if sort_col not in deg_df.columns:
+            raise ValueError(f"{sort_col} was not found in deg dataframe")
+
+        # sort deg dataframe and get top n genes
+        top_genes = (
+            deg_df
+            .sort_values(sort_col, ascending=ascending)
+            .head(top_n)[gene_col]
+            .dropna()
+            .astype(str)
+            .tolist()
+        )
+
+        # add as set
+        top_gene_sets.append(set(top_genes))
+
+    # find intersecting genes
+    intersecting_genes = set.intersection(*top_gene_sets)
+
+    # return as sorted list
+    return sorted(intersecting_genes)
