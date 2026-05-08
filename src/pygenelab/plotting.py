@@ -644,13 +644,13 @@ def plot_multiple_gene_expression(
     return plot_df, fig, axes
 
 
-# plot_deg_dotplot
-def plot_deg_dotplot(
-    deg_dfs,
-    labels,
+# plot_top_intersecting_genes_dotplot
+def plot_top_intersecting_genes_dotplot(
+    intersecting_genes_df,
+    labels=None,
     gene_col="names",
-    score_col="logfoldchanges",
-    top_n=None,
+    score_col_prefix="logfoldchanges",
+    value_cols=None,
     cluster_rows=False,
     cluster_cols=True,
     figsize=(12, 4),
@@ -658,76 +658,70 @@ def plot_deg_dotplot(
     min_dot_size=30,
     max_dot_size=500,
     sort_genes=False,
-    title="Top DEGs",
+    title="Top Intersecting DEGs",
     show=True
 ):
     """
-    plot shared deg genes across multiple deg dataframes as a dotplot
+    plot top intersecting deg genes from an already merged dataframe
     """
 
-    # plot_deg_dotplot
+    # plot_top_intersecting_genes_dotplot
     # api:
-    # plot_deg_dotplot(
-    #     deg_dfs=[deg_df1, deg_df2],
-    #     labels=["Fast IIX", "Fast IIB"],
+    # plot_top_intersecting_genes_dotplot(
+    #     intersecting_genes_df=male_top10_genes,
+    #     labels=["Fast IIX", "Fast IIB", "Skeleton MuSc", "FAPs"],
     #     gene_col="names",
-    #     score_col="logfoldchanges",
-    #     top_n=10,
+    #     score_col_prefix="logfoldchanges",
     # )
 
-    # check input
-    if len(deg_dfs) != len(labels):
-        raise ValueError("deg_dfs and labels must have the same length")
+    # find value columns automatically
+    if value_cols is None:
+        value_cols = [
+            col for col in intersecting_genes_df.columns
+            if col.startswith(f"{score_col_prefix}_")
+        ]
 
-    if len(deg_dfs) < 2:
-        raise ValueError("deg_dfs must contain at least two dataframes")
+    # check gene column
+    if gene_col not in intersecting_genes_df.columns:
+        raise ValueError(f"{gene_col} was not found in intersecting_genes_df")
 
-    # merge all deg dataframes on shared genes
-    merged = None
+    # check value columns
+    if len(value_cols) == 0:
+        raise ValueError("No value columns were found")
 
-    for deg_df, label in zip(deg_dfs, labels):
+    missing_cols = [
+        col for col in value_cols
+        if col not in intersecting_genes_df.columns
+    ]
 
-        # check needed columns
-        if gene_col not in deg_df.columns:
-            raise ValueError(f"{gene_col} was not found in dataframe")
+    if len(missing_cols) > 0:
+        raise ValueError(f"missing value columns: {missing_cols}")
 
-        if score_col not in deg_df.columns:
-            raise ValueError(f"{score_col} was not found in dataframe")
+    # make default labels
+    if labels is None:
+        labels = value_cols
 
-        # keep only gene and score columns
-        temp_df = deg_df[[gene_col, score_col]].copy()
+    # check labels
+    if len(labels) != len(value_cols):
+        raise ValueError("labels and value_cols must have the same length")
 
-        # rename score column using label
-        temp_df = temp_df.rename(columns={score_col: label})
+    # keep needed columns
+    plot_input_df = intersecting_genes_df[[gene_col] + value_cols].copy()
 
-        # merge with previous dataframes
-        if merged is None:
-            merged = temp_df
-        else:
-            merged = pd.merge(
-                merged,
-                temp_df,
-                on=gene_col,
-                how="inner"
-            )
+    # rename columns to labels
+    rename_map = {
+        old_col: label
+        for old_col, label in zip(value_cols, labels)
+    }
 
-    # check shared genes
-    if merged.empty:
-        raise ValueError("No intersecting genes found across the dataframes.")
+    plot_input_df = plot_input_df.rename(columns=rename_map)
 
-    # calculate mean score for optional top n filtering
-    merged["mean_score"] = merged[labels].mean(axis=1)
-
-    # keep top n genes if requested
-    if top_n is not None:
-        merged = merged.sort_values("mean_score", ascending=False).head(top_n)
-
-    # optional alphabetical gene sorting
+    # optional gene sorting
     if sort_genes:
-        merged = merged.sort_values(gene_col)
+        plot_input_df = plot_input_df.sort_values(gene_col)
 
-    # build matrix: rows = labels, columns = genes
-    plot_df = merged.set_index(gene_col)[labels].T
+    # build matrix: rows = labels, cols = genes
+    plot_df = plot_input_df.set_index(gene_col)[labels].T
 
     # optional clustering of columns
     if cluster_cols and plot_df.shape[1] > 1:
@@ -752,7 +746,7 @@ def plot_deg_dotplot(
     abs_min = abs_scores.min()
     abs_max = abs_scores.max()
 
-    # scale dot size
+    # scale dot sizes
     def scale_size(val):
         aval = abs(val)
 
@@ -811,11 +805,11 @@ def plot_deg_dotplot(
     ax.set_ylim(len(rows) - 0.5, -0.5)
     ax.grid(False)
 
-    # add colorbar
+    # colorbar
     cbar = plt.colorbar(sc, ax=ax, pad=0.02)
-    cbar.set_label(score_col.replace("_", " ").title())
+    cbar.set_label(score_col_prefix.replace("_", " ").title())
 
-    # add size legend
+    # size legend
     legend_vals = np.linspace(abs_min, abs_max, 4)
     legend_sizes = [scale_size(v) for v in legend_vals]
 
@@ -836,7 +830,7 @@ def plot_deg_dotplot(
     ax.legend(
         handles,
         legend_labels,
-        title=score_col.replace("_", " ").title(),
+        title=score_col_prefix.replace("_", " ").title(),
         scatterpoints=1,
         frameon=False,
         bbox_to_anchor=(1.18, 1),
@@ -849,5 +843,5 @@ def plot_deg_dotplot(
     if show:
         plt.show()
 
-    # return figure and plotting dataframe
+    # return figure and plot dataframe
     return fig, plot_df
