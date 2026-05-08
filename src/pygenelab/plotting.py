@@ -11,6 +11,9 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import seaborn as sns
 
+from scipy.cluster.hierarchy import linkage, leaves_list
+from scipy.spatial.distance import pdist
+
 from .utils import calculate_pairwise_significance
 
 
@@ -641,183 +644,210 @@ def plot_multiple_gene_expression(
     return plot_df, fig, axes
 
 
-# plot_intersecting_deg_dotplot
-def plot_intersecting_deg_dotplot(
-    merged_deg_df,
-    group_names,
+# plot_deg_dotplot
+def plot_deg_dotplot(
+    deg_dfs,
+    labels,
     gene_col="names",
-    value_cols=None,
-    value_col_prefix="logfoldchanges",
+    score_col="logfoldchanges",
+    top_n=None,
+    cluster_rows=False,
+    cluster_cols=True,
     figsize=(12, 4),
     cmap="Reds",
-    title=None,
-    min_dot_size=40,
+    min_dot_size=30,
     max_dot_size=500,
-    rotation=90,
-    size_by_abs=True
+    sort_genes=False,
+    title="Top DEGs",
+    show=True
 ):
     """
-    plot a dotplot for shared deg genes across groups
-
-    dot color shows the value in each group
-    dot size shows the magnitude of the value
+    plot shared deg genes across multiple deg dataframes as a dotplot
     """
 
-    # plot_intersecting_deg_dotplot
+    # plot_deg_dotplot
     # api:
-    # plot_intersecting_deg_dotplot(
-    #     merged_deg_df=male_top10_genes,
-    #     group_names=["Fast IIX", "Fast IIB", "Skeleton MuSc", "FAPs"],
+    # plot_deg_dotplot(
+    #     deg_dfs=[deg_df1, deg_df2],
+    #     labels=["Fast IIX", "Fast IIB"],
     #     gene_col="names",
+    #     score_col="logfoldchanges",
+    #     top_n=10,
     # )
 
-    # make default value columns
-    if value_cols is None:
-        value_cols = [
-            f"{value_col_prefix}_df{i+1}"
-            for i in range(len(group_names))
-        ]
+    # check input
+    if len(deg_dfs) != len(labels):
+        raise ValueError("deg_dfs and labels must have the same length")
 
-    # check input lengths match
-    if len(group_names) != len(value_cols):
-        raise ValueError("group_names and value_cols must have the same length")
+    if len(deg_dfs) < 2:
+        raise ValueError("deg_dfs must contain at least two dataframes")
 
-    # check needed columns
-    needed_cols = [gene_col] + value_cols
-    missing_cols = [col for col in needed_cols if col not in merged_deg_df.columns]
+    # merge all deg dataframes on shared genes
+    merged = None
 
-    if len(missing_cols) > 0:
-        raise ValueError(f"missing columns in merged_deg_df: {missing_cols}")
+    for deg_df, label in zip(deg_dfs, labels):
 
-    # keep needed columns
-    plot_df = merged_deg_df[needed_cols].copy()
+        # check needed columns
+        if gene_col not in deg_df.columns:
+            raise ValueError(f"{gene_col} was not found in dataframe")
 
-    # rename value columns to group names
-    rename_map = {
-        old_col: new_name
-        for old_col, new_name in zip(value_cols, group_names)
-    }
-    plot_df = plot_df.rename(columns=rename_map)
+        if score_col not in deg_df.columns:
+            raise ValueError(f"{score_col} was not found in dataframe")
 
-    # reshape to long format
-    plot_df = plot_df.melt(
-        id_vars=gene_col,
-        value_vars=group_names,
-        var_name="group",
-        value_name="value"
-    )
+        # keep only gene and score columns
+        temp_df = deg_df[[gene_col, score_col]].copy()
 
-    # set plot order
-    gene_order = merged_deg_df[gene_col].tolist()
-    plot_df[gene_col] = pd.Categorical(plot_df[gene_col], categories=gene_order, ordered=True)
-    plot_df["group"] = pd.Categorical(plot_df["group"], categories=group_names, ordered=True)
+        # rename score column using label
+        temp_df = temp_df.rename(columns={score_col: label})
 
-    # sort rows
-    plot_df = plot_df.sort_values(["group", gene_col]).reset_index(drop=True)
+        # merge with previous dataframes
+        if merged is None:
+            merged = temp_df
+        else:
+            merged = pd.merge(
+                merged,
+                temp_df,
+                on=gene_col,
+                how="inner"
+            )
 
-    # make x and y positions
-    x_map = {gene: i for i, gene in enumerate(gene_order)}
-    y_map = {group: i for i, group in enumerate(group_names)}
+    # check shared genes
+    if merged.empty:
+        raise ValueError("No intersecting genes found across the dataframes.")
 
-    plot_df["x"] = plot_df[gene_col].map(x_map)
-    plot_df["y"] = plot_df["group"].map(y_map)
+    # calculate mean score for optional top n filtering
+    merged["mean_score"] = merged[labels].mean(axis=1)
 
-    # get size values
-    if size_by_abs:
-        plot_df["size_value"] = plot_df["value"].abs()
-    else:
-        plot_df["size_value"] = plot_df["value"]
+    # keep top n genes if requested
+    if top_n is not None:
+        merged = merged.sort_values("mean_score", ascending=False).head(top_n)
 
-    # scale dot sizes
-    size_min = plot_df["size_value"].min()
-    size_max = plot_df["size_value"].max()
+    # optional alphabetical gene sorting
+    if sort_genes:
+        merged = merged.sort_values(gene_col)
 
-    if size_min == size_max:
-        plot_df["dot_size"] = (min_dot_size + max_dot_size) / 2
-    else:
-        plot_df["dot_size"] = (
+    # build matrix: rows = labels, columns = genes
+    plot_df = merged.set_index(gene_col)[labels].T
+
+    # optional clustering of columns
+    if cluster_cols and plot_df.shape[1] > 1:
+        col_linkage = linkage(pdist(plot_df.T), method="average")
+        col_order = leaves_list(col_linkage)
+        plot_df = plot_df.iloc[:, col_order]
+
+    # optional clustering of rows
+    if cluster_rows and plot_df.shape[0] > 1:
+        row_linkage = linkage(pdist(plot_df), method="average")
+        row_order = leaves_list(row_linkage)
+        plot_df = plot_df.iloc[row_order, :]
+
+    # get rows and columns
+    rows = plot_df.index.tolist()
+    cols = plot_df.columns.tolist()
+
+    # get score ranges
+    all_scores = plot_df.values.flatten()
+    abs_scores = np.abs(all_scores)
+
+    abs_min = abs_scores.min()
+    abs_max = abs_scores.max()
+
+    # scale dot size
+    def scale_size(val):
+        aval = abs(val)
+
+        if abs_max == abs_min:
+            return (min_dot_size + max_dot_size) / 2
+
+        return (
             min_dot_size
-            + (plot_df["size_value"] - size_min)
+            + (aval - abs_min)
             * (max_dot_size - min_dot_size)
-            / (size_max - size_min)
+            / (abs_max - abs_min)
         )
 
-    # make plot
+    # build plotting coordinates
+    x_coords = []
+    y_coords = []
+    color_values = []
+    size_values = []
+
+    for i, row_name in enumerate(rows):
+        for j, col_name in enumerate(cols):
+
+            val = plot_df.loc[row_name, col_name]
+
+            x_coords.append(j)
+            y_coords.append(i)
+            color_values.append(val)
+            size_values.append(scale_size(val))
+
+    # create figure
     fig, ax = plt.subplots(figsize=figsize)
 
-    scatter = ax.scatter(
-        plot_df["x"],
-        plot_df["y"],
-        s=plot_df["dot_size"],
-        c=plot_df["value"],
+    # plot dots
+    sc = ax.scatter(
+        x_coords,
+        y_coords,
+        s=size_values,
+        c=color_values,
         cmap=cmap,
-        edgecolors="dimgray",
-        linewidths=1
+        edgecolor="black",
+        linewidth=0.5
     )
 
-    # axis labels and ticks
-    ax.set_xticks(range(len(gene_order)))
-    ax.set_xticklabels(gene_order, rotation=rotation)
-    ax.set_yticks(range(len(group_names)))
-    ax.set_yticklabels(group_names)
+    # format axes
+    ax.set_xticks(range(len(cols)))
+    ax.set_xticklabels(cols, rotation=90)
+    ax.set_yticks(range(len(rows)))
+    ax.set_yticklabels(rows)
 
+    ax.invert_yaxis()
     ax.set_xlabel("Genes")
     ax.set_ylabel("Cell Types")
+    ax.set_title(title)
 
-    # title
-    if title is not None:
-        ax.set_title(title)
+    ax.set_xlim(-0.5, len(cols) - 0.5)
+    ax.set_ylim(len(rows) - 0.5, -0.5)
+    ax.grid(False)
 
-    # light background
-    ax.set_facecolor("#f2f2f2")
+    # add colorbar
+    cbar = plt.colorbar(sc, ax=ax, pad=0.02)
+    cbar.set_label(score_col.replace("_", " ").title())
 
-    # colorbar
-    cbar = plt.colorbar(scatter, ax=ax, pad=0.02)
-    cbar.set_label(value_col_prefix.replace("_", " ").title())
+    # add size legend
+    legend_vals = np.linspace(abs_min, abs_max, 4)
+    legend_sizes = [scale_size(v) for v in legend_vals]
 
-    # size legend values
-    legend_vals = np.linspace(size_min, size_max, 4)
-
-    if size_min == size_max:
-        legend_vals = np.array([size_min])
-
-    legend_sizes = []
-    for val in legend_vals:
-        if size_min == size_max:
-            size = (min_dot_size + max_dot_size) / 2
-        else:
-            size = (
-                min_dot_size
-                + (val - size_min)
-                * (max_dot_size - min_dot_size)
-                / (size_max - size_min)
-            )
-        legend_sizes.append(size)
-
-    # make size legend handles
     handles = [
-        ax.scatter([], [], s=size, facecolor="gray", edgecolor="dimgray")
+        plt.scatter(
+            [],
+            [],
+            s=size,
+            color="gray",
+            edgecolor="black",
+            linewidth=0.5
+        )
         for size in legend_sizes
     ]
 
-    labels = [f"{val:.2f}" for val in legend_vals]
-
-    legend_title = value_col_prefix.replace("_", " ").title()
-    if size_by_abs:
-        legend_title = f"|{legend_title}|"
+    legend_labels = [f"{v:.2f}" for v in legend_vals]
 
     ax.legend(
         handles,
-        labels,
-        title=legend_title,
-        bbox_to_anchor=(1.18, 1.0),
-        loc="upper left",
-        frameon=False,
+        legend_labels,
+        title=score_col.replace("_", " ").title(),
         scatterpoints=1,
-        handlelength=1
+        frameon=False,
+        bbox_to_anchor=(1.18, 1),
+        loc="upper left"
     )
 
     plt.tight_layout()
 
-    # return figure
-    return fig
+    # show plot if needed
+    if show:
+        plt.show()
+
+    # return figure and plotting dataframe
+    return fig, plot_df
