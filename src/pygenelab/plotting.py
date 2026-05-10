@@ -10,9 +10,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import seaborn as sns
+import decoupler as dc
 
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import pdist
+from matplotlib.lines import Line2D
 
 from .utils import calculate_pairwise_significance
 
@@ -847,6 +849,11 @@ def plot_top_intersecting_genes_dotplot(
     return fig, plot_df
 
 
+import numpy as np
+import decoupler as dc
+from matplotlib.lines import Line2D
+
+
 def plot_deg_volcano(
     deg_df,
     gene_col="names",
@@ -854,34 +861,32 @@ def plot_deg_volcano(
     pval_col="pvals_adj",
     logfc_threshold=0.5,
     pval_threshold=0.05,
-    positive_label="Positive",
-    negative_label="Negative",
+    positive_label="WT Higher",
+    negative_label="KO Higher",
     neutral_label="Not Significant",
     top_n_labels=10,
     genes_to_label=None,
     title="Volcano Plot",
-    xlabel="log2 fold change",
-    ylabel="-log10 adjusted p-value",
     figsize=(7, 6),
     dot_size=45,
     alpha=0.8,
-    label_fontsize=8,
-    palette=None,
-    ax=None
+    max_stat=None,
+    max_sign=None,
+    color_pos="firebrick",
+    color_neg="royalblue",
+    color_null="lightgray"
 ):
     """
-    plot volcano plot from a deg dataframe
+    plot volcano plot for deg results using decoupler
     """
 
     # plot_deg_volcano
     # api:
     # plot_deg_volcano(
     #     deg_df,
-    #     gene_col="names",
-    #     logfc_col="logfoldchanges",
-    #     pval_col="pvals_adj",
     #     positive_label="WT Higher",
     #     negative_label="KO Higher",
+    #     title="Volcano Plot",
     # )
 
     # check required columns
@@ -904,83 +909,75 @@ def plot_deg_volcano(
     # avoid log10(0)
     plot_df[pval_col] = plot_df[pval_col].replace(0, np.nextafter(0, 1))
 
-    # compute volcano y-axis
-    plot_df["neg_log10_pval"] = -np.log10(plot_df[pval_col])
+    # set gene names as index for decoupler
+    plot_df = plot_df.set_index(gene_col)
 
-    # classify genes
-    plot_df["status"] = neutral_label
+    # remove duplicate gene names if present
+    plot_df = plot_df[~plot_df.index.duplicated(keep="first")]
 
-    plot_df.loc[
-        (plot_df[logfc_col] >= logfc_threshold) &
-        (plot_df[pval_col] < pval_threshold),
-        "status"
-    ] = positive_label
-
-    plot_df.loc[
-        (plot_df[logfc_col] <= -logfc_threshold) &
-        (plot_df[pval_col] < pval_threshold),
-        "status"
-    ] = negative_label
-
-    # set default palette
-    if palette is None:
-        palette = {
-            neutral_label: "lightgray",
-            positive_label: "firebrick",
-            negative_label: "royalblue"
-        }
-
-    # create axis if needed
-    if ax is None:
-        fig, ax = plt.subplots(figsize=figsize)
-    else:
-        fig = ax.figure
-
-    # plot each class
-    for status in [neutral_label, positive_label, negative_label]:
-        subset = plot_df[plot_df["status"] == status]
-
-        ax.scatter(
-            subset[logfc_col],
-            subset["neg_log10_pval"],
-            s=dot_size,
-            alpha=alpha,
-            color=palette.get(status, "gray"),
-            label=status,
-            edgecolor="none"
-        )
-
-    # add cutoff lines
-    ax.axvline(logfc_threshold, linestyle="--", linewidth=1, color="black")
-    ax.axvline(-logfc_threshold, linestyle="--", linewidth=1, color="black")
-    ax.axhline(-np.log10(pval_threshold), linestyle="--", linewidth=1, color="black")
-
-    # choose genes to label
+    # choose labels
     if genes_to_label is not None:
-        label_df = plot_df[plot_df[gene_col].isin(genes_to_label)].copy()
+        top = genes_to_label
     else:
-        label_df = (
-            plot_df[plot_df["status"] != neutral_label]
-            .sort_values("neg_log10_pval", ascending=False)
-            .head(top_n_labels)
-            .copy()
-        )
+        top = top_n_labels
 
-    # add gene labels
-    for _, row in label_df.iterrows():
-        ax.text(
-            row[logfc_col],
-            row["neg_log10_pval"],
-            row[gene_col],
-            fontsize=label_fontsize
-        )
+    # plot using decoupler
+    fig = dc.pl.volcano(
+        data=plot_df,
+        x=logfc_col,
+        y=pval_col,
+        top=top,
+        thr_stat=logfc_threshold,
+        thr_sign=pval_threshold,
+        max_stat=max_stat,
+        max_sign=max_sign,
+        color_pos=color_pos,
+        color_neg=color_neg,
+        color_null=color_null,
+        kw_scatter={
+            "s": dot_size,
+            "alpha": alpha,
+            "edgecolor": "none"
+        },
+        figsize=figsize,
+        return_fig=True
+    )
 
-    # format plot
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
+    # get axis
+    ax = fig.axes[0]
+
+    # add title
     ax.set_title(title)
-    ax.legend(frameon=False)
 
-    plt.tight_layout()
+    # add custom legend
+    legend_handles = [
+        Line2D(
+            [0], [0],
+            marker="o",
+            color="none",
+            markerfacecolor=color_null,
+            markersize=8,
+            label=neutral_label
+        ),
+        Line2D(
+            [0], [0],
+            marker="o",
+            color="none",
+            markerfacecolor=color_pos,
+            markersize=8,
+            label=positive_label
+        ),
+        Line2D(
+            [0], [0],
+            marker="o",
+            color="none",
+            markerfacecolor=color_neg,
+            markersize=8,
+            label=negative_label
+        )
+    ]
 
+    ax.legend(handles=legend_handles, frameon=False)
+
+    # return figure and prepared dataframe
     return fig, plot_df
