@@ -145,6 +145,47 @@ def combine_multiple_figures(figures, layout="horizontal", n_cols=None, save_pat
     return combined_img
 
 
+def save_fig_as_png(
+    fig,
+    output_path,
+    dpi=300,
+    bbox_inches="tight",
+    transparent=False
+):
+    """
+    save one matplotlib figure as a png file
+    """
+
+    # save_mpl_fig_png
+    # api:
+    # save_mpl_fig_png(
+    #     fig=fig,
+    #     output_path="volcano_plot.png",
+    #     dpi=300,
+    # )
+
+    # convert output path to Path object
+    output_path = Path(output_path)
+
+    # create parent folder if needed
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # make sure file extension is png
+    if output_path.suffix.lower() != ".png":
+        output_path = output_path.with_suffix(".png")
+
+    # save figure
+    fig.savefig(
+        output_path,
+        dpi=dpi,
+        bbox_inches=bbox_inches,
+        transparent=transparent
+    )
+
+    # return saved path
+    return output_path
+
+
 # save_editable_svg
 def save_editable_svg(
     fig,
